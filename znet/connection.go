@@ -14,18 +14,18 @@ type Connection struct {
 
 	isClosed bool
 
-	handleAPI ziface.HandFunc
+	Router ziface.IRouter
 
 	ExitBuffChan chan bool
 }
 
 func NewConnection(conn *net.TCPConn, connID uint32,
-	callback_api ziface.HandFunc) *Connection {
+	router ziface.IRouter) *Connection {
 	c := &Connection{
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
-		handleAPI:    callback_api,
+		Router:       router,
 		ExitBuffChan: make(chan bool, 1),
 	}
 	return c
@@ -36,19 +36,27 @@ func (c *Connection) StartReader() {
 	defer c.Stop()
 
 	for {
+		fmt.Println("start reader ...")
 		buf := make([]byte, 512)
-		cnt, err := c.Conn.Read(buf)
+		_, err := c.Conn.Read(buf)
 		if err != nil {
 			fmt.Println("recv buf err ", err)
 			c.ExitBuffChan <- true
 			continue
 		}
 
-		if err := c.handleAPI(c.Conn, buf, cnt); err != nil {
-			fmt.Println("connID ", c.ConnID, " handle is error")
-			c.ExitBuffChan <- true
-			return
+		
+
+		req := Request {
+			conn: c,
+			data: buf,
 		}
+
+		go func(request ziface.IRequest) {
+			c.Router.PreHandle(request)
+			c.Router.Handle(request)
+			c.Router.PostHandle(request)
+		}(&req)
 	}
 }
 
@@ -63,6 +71,7 @@ func (c *Connection) Start() {
 }
 
 func (c *Connection) Stop() {
+	fmt.Println("connection is stopping...")
 	if c.isClosed == true {
 		return
 	}
