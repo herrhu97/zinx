@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/herrhu97/zinx/utils"
 	"github.com/herrhu97/zinx/ziface"
 )
 
@@ -17,12 +18,12 @@ type Server struct {
 	Router    ziface.IRouter
 }
 
-func NewServer(name string) ziface.IServer {
+func NewServer() ziface.IServer {
 	s := &Server{
-		Name:      name,
+		Name:      utils.GlobalObject.Name,
 		IPVersion: "tcp4",
-		IP:        "0.0.0.0",
-		Port:      7777,
+		IP:        utils.GlobalObject.Host,
+		Port:      utils.GlobalObject.TcpPort,
 		Router:    nil,
 	}
 	return s
@@ -39,6 +40,11 @@ func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
 
 func (s *Server) Start() {
 	fmt.Printf("[START] Server listenner at IP: %s, Port %d, is starting\n", s.IP, s.Port)
+	fmt.Printf("[Zinx] ServerName: %s, Version: %s, MaxConn: %d,  MaxPacketSize: %d\n",
+		utils.GlobalObject.Name,
+		utils.GlobalObject.Version,
+		utils.GlobalObject.MaxConn,
+		utils.GlobalObject.MaxPacketSize)
 	go func() {
 		addr, err := net.ResolveTCPAddr(s.IPVersion, fmt.Sprintf("%s:%d", s.IP, s.Port))
 		if err != nil {

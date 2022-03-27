@@ -35,7 +35,7 @@ func ClientTest() {
 }
 
 func TestServer(t *testing.T) {
-	s := NewServer("[ZINX 0.1]")
+	s := NewServer()
 	go ClientTest()
 	s.Serve()
 }
