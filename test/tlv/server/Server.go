@@ -15,7 +15,7 @@ func main() {
 	if err != nil {
 		fmt.Println("server listen err:", err)
 		return
-	}
+	}  
 	//创建服务器gotoutine，负责从客户端goroutine读取粘包的数据，然后进行解析
 	for {
 		conn, err := listener.Accept()

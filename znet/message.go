@@ -8,7 +8,7 @@ type Message struct {
 	Data    []byte
 }
 
-func NewMessage(id uint32, data []byte) ziface.IMessage {
+func NewMsgPackage(id uint32, data []byte) ziface.IMessage {
 	m := &Message{
 		DataLen: uint32(len(data)),
 		MsgID:   id,
