@@ -15,16 +15,17 @@ type Server struct {
 	IPVersion string
 	IP        string
 	Port      int
-	Router    ziface.IRouter
+	// Router    ziface.IRouter
+	msgHandler ziface.IMsgHandle
 }
 
 func NewServer() ziface.IServer {
 	s := &Server{
-		Name:      utils.GlobalObject.Name,
-		IPVersion: "tcp4",
-		IP:        utils.GlobalObject.Host,
-		Port:      utils.GlobalObject.TcpPort,
-		Router:    nil,
+		Name:       utils.GlobalObject.Name,
+		IPVersion:  "tcp4",
+		IP:         utils.GlobalObject.Host,
+		Port:       utils.GlobalObject.TcpPort,
+		msgHandler: NewMsgHandle(),
 	}
 	return s
 }
@@ -65,7 +66,7 @@ func (s *Server) Start() {
 				continue
 			}
 
-			dealConn := NewConnection(conn, cid, s.Router)
+			dealConn := NewConnection(conn, cid, s.msgHandler)
 			cid++
 			go dealConn.Start()
 
@@ -86,6 +87,6 @@ func (s *Server) Stop() {
 	fmt.Println("[STOP] Zinx server , name ", s.Name)
 }
 
-func (s *Server) AddRouter(router ziface.IRouter) {
-	s.Router = router
+func (s *Server) AddRouter(msgId uint32, router ziface.IRouter) {
+	s.msgHandler.AddRouter(msgId, router)
 }
