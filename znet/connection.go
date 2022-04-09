@@ -51,46 +51,52 @@ func NewConnection(server ziface.IServer, conn *net.TCPConn, connID uint32,
 
 func (c *Connection) StartReader() {
 	fmt.Println("Reader Goroutine is  running")
-	defer fmt.Println(c.Conn.RemoteAddr().String(), " conn read exit!")
+	defer fmt.Println(c.Conn.RemoteAddr().String(), " [conn read exit!]")
 	defer c.Stop()
 
 	for {
-		dp := NewDataPack()
-		buf := make([]byte, dp.GetHeadLen())
-		if _, err := io.ReadFull(c.GetTCPConnection(), buf); err != nil {
-			fmt.Println("recv msg head error ", err)
-			c.ExitBuffChan <- true
-			continue
-		}
-
-		msg, err := dp.Unpack(buf)
-		if err != nil {
-			fmt.Println("recv buf err ", err)
-			c.ExitBuffChan <- true
-			continue
-		}
-
-		var data []byte
-		if msg.GetDataLen() > 0 {
-			data = make([]byte, msg.GetDataLen())
-			if _, err := io.ReadFull(c.GetTCPConnection(), data); err != nil {
-				fmt.Println("read msg data error ", err)
+		select {
+		case <-c.ExitBuffChan:
+			return
+		default:
+			dp := NewDataPack()
+			buf := make([]byte, dp.GetHeadLen())
+			if _, err := io.ReadFull(c.GetTCPConnection(), buf); err != nil {
+				fmt.Println("recv msg head error ", err)
 				c.ExitBuffChan <- true
 				continue
 			}
-		}
-		msg.SetData(data)
 
-		req := Request{
-			conn: c,
-			msg:  msg,
+			msg, err := dp.Unpack(buf)
+			if err != nil {
+				fmt.Println("recv buf err ", err)
+				c.ExitBuffChan <- true
+				continue
+			}
+
+			var data []byte
+			if msg.GetDataLen() > 0 {
+				data = make([]byte, msg.GetDataLen())
+				if _, err := io.ReadFull(c.GetTCPConnection(), data); err != nil {
+					fmt.Println("read msg data error ", err)
+					c.ExitBuffChan <- true
+					continue
+				}
+			}
+			msg.SetData(data)
+
+			req := Request{
+				conn: c,
+				msg:  msg,
+			}
+
+			if utils.GlobalObject.WorkerPoolSize > 0 {
+				c.MsgHandler.SendMsgToTaskQueue(&req)
+			} else {
+				go c.MsgHandler.DoMsgHandler(&req)
+			}
 		}
 
-		if utils.GlobalObject.WorkerPoolSize > 0 {
-			c.MsgHandler.SendMsgToTaskQueue(&req)
-		} else {
-			go c.MsgHandler.DoMsgHandler(&req)
-		}
 	}
 }
 
@@ -103,6 +109,7 @@ func (c *Connection) Start() {
 	for {
 		select {
 		case <-c.ExitBuffChan:
+			c.Stop()
 			return
 		}
 	}
