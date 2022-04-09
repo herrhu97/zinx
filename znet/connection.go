@@ -11,6 +11,8 @@ import (
 )
 
 type Connection struct {
+	TCPServer ziface.IServer
+
 	Conn *net.TCPConn
 
 	ConnID uint32
@@ -22,17 +24,21 @@ type Connection struct {
 	ExitBuffChan chan bool
 
 	msgChan chan []byte
+
+	msgBuffChan chan []byte
 }
 
-func NewConnection(conn *net.TCPConn, connID uint32,
+func NewConnection(server ziface.IServer, conn *net.TCPConn, connID uint32,
 	msgHandler ziface.IMsgHandle) *Connection {
 	c := &Connection{
+		TCPServer:    server,
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
-		MsgHandler:    msgHandler,
+		MsgHandler:   msgHandler,
 		ExitBuffChan: make(chan bool, 1),
 		msgChan:      make(chan []byte),
+		msgBuffChan:  make(chan []byte, utils.GlobalObject.MaxMsgChanLen),
 	}
 	return c
 }
@@ -86,6 +92,8 @@ func (c *Connection) Start() {
 	go c.StartReader()
 	go c.StartWriter()
 
+	c.TCPServer.CallOnConnStart(c)
+
 	for {
 		select {
 		case <-c.ExitBuffChan:
@@ -101,8 +109,15 @@ func (c *Connection) Stop() {
 	}
 
 	c.isClosed = true
+
+	c.TCPServer.CallOnConnStop(c)
+
 	c.Conn.Close()
 	c.ExitBuffChan <- true
+
+	c.TCPServer.GetConnMgr().Remove(c)
+
+	close(c.msgChan)
 	close(c.ExitBuffChan)
 }
 
@@ -135,6 +150,22 @@ func (c *Connection) SendMsg(msgId uint32, data []byte) error {
 	return nil
 }
 
+func (c *Connection) SendBuffMsg(msgId uint32, data []byte) error {
+	if c.isClosed == true {
+		return errors.New("Connection closed when send msg")
+	}
+	//将data封包，并且发送
+	dp := NewDataPack()
+	msg, err := dp.Pack(NewMsgPackage(msgId, data))
+	if err != nil {
+		fmt.Println("Pack error msg id = ", msgId)
+		return errors.New("Pack error msg ")
+	}
+	//写回客户端
+	c.msgBuffChan <- msg
+	return nil
+}
+
 func (c *Connection) StartWriter() {
 	fmt.Println("[Writer Goroutine is running]")
 	defer fmt.Println(c.RemoteAddr().String(), "[conn Writer exit!]")
@@ -145,6 +176,17 @@ func (c *Connection) StartWriter() {
 			if _, err := c.Conn.Write(data); err != nil {
 				fmt.Println("Send Data error:, ", err, " Conn Writer exit")
 				return
+			}
+
+		case data, ok := <-c.msgBuffChan:
+			if ok {
+				if _, err := c.Conn.Write(data); err != nil {
+					fmt.Println("Send Data error:, ", err, " Conn Writer exit")
+					return
+				}
+			} else {
+				fmt.Println("msgBuffChan is Closed")
+				break
 			}
 		case <-c.ExitBuffChan:
 			return
