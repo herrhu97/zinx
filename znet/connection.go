@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/herrhu97/zinx/utils"
 	"github.com/herrhu97/zinx/ziface"
 )
 
@@ -16,9 +17,11 @@ type Connection struct {
 
 	isClosed bool
 
-	MsgHandle ziface.IMsgHandle
+	MsgHandler ziface.IMsgHandle
 
 	ExitBuffChan chan bool
+
+	msgChan chan []byte
 }
 
 func NewConnection(conn *net.TCPConn, connID uint32,
@@ -27,8 +30,9 @@ func NewConnection(conn *net.TCPConn, connID uint32,
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
-		MsgHandle:    msgHandler,
+		MsgHandler:    msgHandler,
 		ExitBuffChan: make(chan bool, 1),
+		msgChan:      make(chan []byte),
 	}
 	return c
 }
@@ -70,12 +74,18 @@ func (c *Connection) StartReader() {
 			msg:  msg,
 		}
 
-		go c.MsgHandle.DoMsgHandler(&req)
+		if utils.GlobalObject.WorkerPoolSize > 0 {
+			c.MsgHandler.SendMsgToTaskQueue(&req)
+		} else {
+			go c.MsgHandler.DoMsgHandler(&req)
+		}
 	}
 }
 
 func (c *Connection) Start() {
 	go c.StartReader()
+	go c.StartWriter()
+
 	for {
 		select {
 		case <-c.ExitBuffChan:
@@ -121,10 +131,23 @@ func (c *Connection) SendMsg(msgId uint32, data []byte) error {
 		return errors.New("Pack error msg ")
 	}
 	//写回客户端
-	if _, err := c.Conn.Write(msg); err != nil {
-		fmt.Println("Write msg id ", msgId, " error ")
-		c.ExitBuffChan <- true
-		return errors.New("conn Write error")
-	}
+	c.msgChan <- msg
 	return nil
+}
+
+func (c *Connection) StartWriter() {
+	fmt.Println("[Writer Goroutine is running]")
+	defer fmt.Println(c.RemoteAddr().String(), "[conn Writer exit!]")
+
+	for {
+		select {
+		case data := <-c.msgChan:
+			if _, err := c.Conn.Write(data); err != nil {
+				fmt.Println("Send Data error:, ", err, " Conn Writer exit")
+				return
+			}
+		case <-c.ExitBuffChan:
+			return
+		}
+	}
 }
